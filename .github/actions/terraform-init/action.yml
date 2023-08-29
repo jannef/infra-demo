@@ -1,0 +1,45 @@
+name: 'Terraform Initialize'
+description: 'Common steps to initialize Terraform'
+
+inputs:
+    tf_version:
+        type: string
+        default: '1.5.6'
+    tf_working_dir:
+        type: string
+        default: './terraform'
+    tf_storage:
+        type: secret
+        required: true
+    tf_storage_key:
+        type: secret
+        required: true
+
+runs:
+    using: composite
+    steps:
+    - name: 'Terraform Setup'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ inputs.tf_version }}
+
+    - name: 'Configure Terraform Cache'
+      shell: bash
+      run: |
+        mkdir -p ${{ inputs.tf_working_dir }}/.terraform/plugin-cache
+        echo 'plugin_cache_dir = \"${{ inputs.tf_working_dir }}/.terraform/plugin-cache\"' > ${{ inputs.tf_working_dir }}/.terraformrc
+
+    - name: 'Cache Terraform'
+      uses: actions/cache@v3
+      with:
+        path: ${{ inputs.tf_working_dir }}/.terraform/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: 'Terraform Init'
+      working-directory: ${{ inputs.tf_working_dir }}
+      shell: bash
+      run: |
+        terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ inputs.tf_storage }}' -backend-config='access_key=${{ inputs.tf_storage_key }}'
+

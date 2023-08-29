@@ -22,28 +22,13 @@ jobs:
     - name: 'Checkout'
       uses: actions/checkout@v3
 
-    - name: 'Terraform Setup'
-      uses: hashicorp/setup-terraform@v2
+    - name: 'Run Terraform initialization steps'
+      uses: ./.github/actions/terraform-init
       with:
-        terraform_version: ${{ env.TF_VERSION }}
-
-    - name: 'Configure Terraform Cache'
-      run: |
-        mkdir -p ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
-        echo 'plugin_cache_dir = \"${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache\"' > ${{ env.TF_ACTION_WORKING_DIR }}/.terraformrc
-
-    - name: 'Cache Terraform'
-      uses: actions/cache@v3
-      with:
-        path: ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
-        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
-        restore-keys: |
-          ${{ runner.os }}-terraform-
-
-    - name: 'Terraform Init'
-      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
-      run: |
-        terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ env.TF_STORAGE }}' -backend-config='access_key=${{ env.TF_STORAGE_KEY }}'
+        tf_version: ${{ env.TF_VERSION }}
+        tf_working_dir: ${{ env.TF_ACTION_WORKING_DIR }}
+        tf_storage: ${{ env.TF_STORAGE }}
+        tf_storage_key: ${{ env.TF_STORAGE_KEY }}
 
     - name: 'Terraform Plan'
       id: plan
@@ -51,7 +36,7 @@ jobs:
       run: terraform plan -out plan.tfplan -detailed-exitcode
 
     - name: 'Upload Plan'
-      uses: actions/upload-artifact@v2
+      uses: actions/upload-artifact@v3
       with:
         name: tfplan
         path: ${{ env.TF_ACTION_WORKING_DIR }}/plan.tfplan
@@ -59,42 +44,27 @@ jobs:
     outputs:
       exitCode: ${{ steps.plan.outputs.exitcode }}
 
-  # applies the terraform plan based on user input
   terraform-apply:
     needs: terraform-plan
     runs-on: ubuntu-latest
     # run only if plan was succesful and there are changes
     if: needs.terraform-plan.outputs.exitCode == 2
+    # protection policies are used to create a manual approval step
     environment: demo
     steps:
     - name: 'Download Plan'
-      uses: actions/download-artifact@v2
+      uses: actions/download-artifact@v3
       with:
         name: tfplan
         path: ${{ env.TF_ACTION_WORKING_DIR }}
 
-    - name: 'Terraform Setup'
-      uses: hashicorp/setup-terraform@v2
+    - name: 'Run Terraform initialization steps'
+      uses: ./.github/actions/terraform-init
       with:
-        terraform_version: ${{ env.TF_VERSION }}
-
-    - name: 'Configure Terraform Cache'
-      run: |
-        mkdir -p ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
-        echo 'plugin_cache_dir = \"${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache\"' > ${{ env.TF_ACTION_WORKING_DIR }}/.terraformrc
-
-    - name: 'Cache Terraform'
-      uses: actions/cache@v3
-      with:
-        path: ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
-        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
-        restore-keys: |
-          ${{ runner.os }}-terraform-
-
-    - name: 'Terraform Init'
-      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
-      run: |
-        terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ env.TF_STORAGE }}' -backend-config='access_key=${{ env.TF_STORAGE_KEY }}'
+        tf_version: ${{ env.TF_VERSION }}
+        tf_working_dir: ${{ env.TF_ACTION_WORKING_DIR }}
+        tf_storage: ${{ env.TF_STORAGE }}
+        tf_storage_key: ${{ env.TF_STORAGE_KEY }}
 
     - name: 'Terraform Apply'
       working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
