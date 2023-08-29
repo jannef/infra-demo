@@ -1,0 +1,25 @@
+name: Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  TF_VERSION: 1.5.6
+  TF_ACTION_DIR: './terraform'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+    - name: 'AZ login'
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+    
+    - name: 'Verify Login'
+      run: |
+        az account show
+        az group list
+        pwd
