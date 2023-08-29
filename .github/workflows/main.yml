@@ -7,19 +7,95 @@ on:
 
 env:
   TF_VERSION: 1.5.6
-  TF_ACTION_DIR: './terraform'
+  TF_ACTION_WORKING_DIR: './terraform'
+  TF_STORAGE: ${{ secrets.DEMO_TF_STORAGE_ACCOUNT_NAME }}
+  TF_STORAGE_KEY: ${{ secrets.DEMO_TF_STORAGE_KEY }}
+  ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+  ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+  ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+  ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
 
 jobs:
-  build-and-deploy:
+  terraform-plan:
     runs-on: ubuntu-latest
     steps:
-    - name: 'AZ login'
-      uses: azure/login@v1
+    - name: 'Checkout'
+      uses: actions/checkout@v3
+
+    - name: 'Terraform Setup'
+      uses: hashicorp/setup-terraform@v2
       with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-    
-    - name: 'Verify Login'
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Configure Terraform Cache'
       run: |
-        az account show
-        az group list
-        pwd
+        mkdir -p ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
+        echo 'plugin_cache_dir = \"${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache\"' > ${{ env.TF_ACTION_WORKING_DIR }}/.terraformrc
+
+    - name: 'Cache Terraform'
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: 'Terraform Init'
+      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
+      run: |
+        terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ env.TF_STORAGE }}' -backend-config='access_key=${{ env.TF_STORAGE_KEY }}'
+
+    - name: 'Terraform Plan'
+      id: plan
+      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
+      run: terraform plan -out plan.tfplan -detailed-exitcode
+
+    - name: 'Upload Plan'
+      uses: actions/upload-artifact@v2
+      with:
+        name: tfplan
+        path: ${{ env.TF_ACTION_WORKING_DIR }}/plan.tfplan
+    
+    outputs:
+      exitCode: ${{ steps.plan.outputs.exitcode }}
+
+  # applies the terraform plan based on user input
+  terraform-apply:
+    needs: terraform-plan
+    runs-on: ubuntu-latest
+    # run only if plan was succesful and there are changes
+    if: needs.terraform-plan.outputs.exitCode == 2
+    environment: demo
+    steps:
+    - name: 'Download Plan'
+      uses: actions/download-artifact@v2
+      with:
+        name: tfplan
+        path: ${{ env.TF_ACTION_WORKING_DIR }}
+
+    - name: 'Terraform Setup'
+      uses: hashicorp/setup-terraform@v2
+      with:
+        terraform_version: ${{ env.TF_VERSION }}
+
+    - name: 'Configure Terraform Cache'
+      run: |
+        mkdir -p ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
+        echo 'plugin_cache_dir = \"${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache\"' > ${{ env.TF_ACTION_WORKING_DIR }}/.terraformrc
+
+    - name: 'Cache Terraform'
+      uses: actions/cache@v3
+      with:
+        path: ${{ env.TF_ACTION_WORKING_DIR }}/.terraform/plugin-cache
+        key: ${{ runner.os }}-terraform-${{ hashFiles('**/.terraform.lock.hcl') }}
+        restore-keys: |
+          ${{ runner.os }}-terraform-
+
+    - name: 'Terraform Init'
+      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
+      run: |
+        terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ env.TF_STORAGE }}' -backend-config='access_key=${{ env.TF_STORAGE_KEY }}'
+
+    - name: 'Terraform Apply'
+      working-directory: ${{ env.TF_ACTION_WORKING_DIR }}
+      run: terraform apply -auto-approve plan.tfplan
