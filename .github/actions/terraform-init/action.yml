@@ -42,4 +42,3 @@ runs:
       shell: bash
       run: |
         terraform init -backend-config='container_name=tfstate' -backend-config='key=terraform.tfstate' -backend-config='storage_account_name=${{ inputs.tf_storage }}' -backend-config='access_key=${{ inputs.tf_storage_key }}'
-
