@@ -16,6 +16,10 @@ provider "azurerm" {
     features {}
 }
 
+locals {
+    app_name            = format("aca-%s", var.name_stub)
+}
+
 resource "azurerm_resource_group" "rg" {
   name                  = format("rg-%s", var.name_stub)
   location              = var.azure_region
@@ -45,7 +49,7 @@ resource "azurerm_container_app_environment" "container_app_environment" {
 
 resource "azurerm_user_assigned_identity" "containerapp_identity" {
   location                      = azurerm_resource_group.rg.location
-  name                          = format("mi-%s", azurerm_container_app.containerapp.name)
+  name                          = format("mi-%s", local.app_name)
   resource_group_name           = azurerm_resource_group.rg.name
 }
 
@@ -53,11 +57,10 @@ resource "azurerm_role_assignment" "containerapp_role_assignment" {
   scope                         = azurerm_container_app.containerapp.id
   role_definition_name          = "acrpull"
   principal_id                  = azurerm_user_assigned_identity.containerapp_identity.principal_id
-  depends_on = [ azurerm_user_assigned_identity.containerapp_identity ]
 }
 
 resource "azurerm_container_app" "containerapp" {
-  name                          = format("aca-%s", var.name_stub)
+  name                          = local.app_name
   container_app_environment_id  = azurerm_container_app_environment.container_app_environment.id
   resource_group_name           = azurerm_resource_group.rg.name
   revision_mode                 = "Single"
@@ -89,9 +92,16 @@ resource "azurerm_virtual_network" "vnet" {
   resource_group_name = azurerm_resource_group.rg.name
 }
 
-resource "azurerm_subnet" "subnet_asp1" {
-  name                 = format("subnet-%s", var.name_stub)
+resource "azurerm_subnet" "subnet_acr" {
+  name                 = format("subnet-%s-acr", var.name_stub)
   resource_group_name  = azurerm_resource_group.rg.name
   virtual_network_name = azurerm_virtual_network.vnet.name
   address_prefixes     = ["10.0.1.0/28"] # 10.0.1.0 - 10.0.1.15
+}
+
+resource "azurerm_subnet" "subnet_aca1" {
+  name                 = format("subnet-%s-aca1", var.name_stub)
+  resource_group_name  = azurerm_resource_group.rg.name
+  virtual_network_name = azurerm_virtual_network.vnet.name
+  address_prefixes     = ["10.0.1.16/28"] # 10.0.1.16 - 10.0.1.31
 }
